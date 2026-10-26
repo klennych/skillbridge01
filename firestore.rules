@@ -1,0 +1,138 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function own(uid) { return signedIn() && request.auth.uid == uid; }
+    function platformAdmin() {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email == 'shfoundationsltd@gmail.com';
+    }
+    // User profile document: authenticated user has full access to their own profile.
+    // The profile is created with exactly these fields: name, email, role, org, verified
+    // and createdAt. role and verified are the server controlled entitlement, so they are
+    // fixed when the account is created and can no longer be changed by the account
+    // owner. The workspace the user picked is tracked in workspaceRole / workspaceReady.
+    match /users/{uid} {
+      allow read: if own(uid);
+      allow create: if own(uid)
+        && request.resource.data.role in ['student', 'college', 'company']
+        && request.resource.data.keys().hasOnly(['name', 'email', 'role', 'org', 'verified', 'createdAt']);
+      allow update: if own(uid)
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.verified == resource.data.verified;
+      allow delete: if false;
+    }
+
+    // User data (saved skills, applications, resume metadata)
+    match /userData/{uid} {
+      allow read, write: if own(uid);
+    }
+
+    // Shared network directory: one entry per member holding only the fields other
+    // members are allowed to see. Every signed in member can read the directory so a
+    // student can find colleges and companies, a college can find its students and the
+    // companies, and a company can find students and colleges. A member publishes and
+    // updates only their own entry.
+    match /directory/{uid} {
+      allow read: if signedIn();
+      allow create, update: if own(uid);
+      allow delete: if false;
+    }
+
+    match /studentProfiles/{uid} {
+      allow get: if own(uid) || (signedIn() &&
+        get(/databases/$(database)/documents/connectionRequests/$(uid + '_' + request.auth.uid)).data.status == 'approved');
+      allow create, update: if own(uid);
+      allow list, delete: if false;
+    }
+
+    // Students request a connection; the named college or company decides.
+    match /connectionRequests/{id} {
+      allow create: if signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student'
+        && request.resource.data.studentUid == request.auth.uid
+        && request.resource.data.orgUid is string
+        && request.resource.data.orgUid != request.auth.uid
+        && request.resource.data.orgRole in ['college', 'company']
+        && get(/databases/$(database)/documents/users/$(request.resource.data.orgUid)).data.role == request.resource.data.orgRole
+        && id == request.resource.data.studentUid + '_' + request.resource.data.orgUid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly(['id', 'studentUid', 'orgUid', 'orgRole', 'studentName', 'studentEmail', 'studentOrg', 'orgName', 'status', 'createdAt']);
+      allow read: if signedIn() &&
+        (resource.data.studentUid == request.auth.uid || resource.data.orgUid == request.auth.uid);
+      allow update: if signedIn()
+        && resource.data.orgUid == request.auth.uid
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == resource.data.orgRole
+        && resource.data.status == 'pending'
+        && request.resource.data.studentUid == resource.data.studentUid
+        && request.resource.data.orgUid == resource.data.orgUid
+        && request.resource.data.status in ['approved', 'rejected']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedAt']);
+      allow delete: if false;
+    }
+
+    match /organizationTests/{id} {
+      allow read: if signedIn() &&
+        (resource.data.studentUid == request.auth.uid || resource.data.orgUid == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /careerOffers/{id} {
+      allow read: if signedIn() &&
+        (resource.data.studentUid == request.auth.uid || resource.data.orgUid == request.auth.uid);
+      allow update: if signedIn()
+        && resource.data.studentUid == request.auth.uid
+        && resource.data.status == 'sent'
+        && request.resource.data.status in ['accepted', 'declined']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'respondedAt']);
+      allow create, delete: if false;
+    }
+
+    match /assessmentKeys/{id} { allow read, write: if false; }
+    // The admin can replace the key but can never read it back from the browser.
+    // A separate, non-secret status document lets the UI show whether a key exists.
+    match /privateSettings/apiKeys {
+      allow get, list: if false;
+      allow create, update: if platformAdmin()
+        && request.resource.data.keys().hasOnly(['openAiKey', 'updatedBy', 'updatedAt'])
+        && request.resource.data.openAiKey is string
+        && request.resource.data.openAiKey.size() >= 20
+        && request.resource.data.openAiKey.size() <= 512
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
+    }
+    match /privateSettings/apiKeyStatus {
+      allow get: if platformAdmin();
+      allow list, delete: if false;
+      allow create, update: if platformAdmin()
+        && request.resource.data.keys().hasOnly(['openAiConfigured', 'source', 'updatedBy', 'updatedAt'])
+        && request.resource.data.openAiConfigured == true
+        && request.resource.data.source == 'Dashboard-managed key'
+        && request.resource.data.updatedBy == request.auth.uid;
+    }
+    // Other private settings remain server-only.
+    match /privateSettings/{id} { allow read, write: if false; }
+
+    match /opportunities/{id} {
+      allow read: if resource.data.status == 'published' || (signedIn() && resource.data.ownerUid == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid && request.resource.data.status == 'draft';
+      allow update: if signedIn() && resource.data.ownerUid == request.auth.uid && request.resource.data.ownerUid == resource.data.ownerUid;
+      allow delete: if false;
+    }
+
+    match /applications/{id} {
+      allow create: if signedIn() && request.resource.data.studentUid == request.auth.uid && request.resource.data.status == 'submitted';
+      allow read: if signedIn() && (resource.data.studentUid == request.auth.uid || resource.data.companyUid == request.auth.uid);
+      allow update, delete: if false;
+    }
+
+    match /assessments/{id} { allow read: if signedIn() && resource.data.ownerUid == request.auth.uid; allow write: if false; }
+    match /assessmentAttempts/{id} { allow read: if signedIn() && resource.data.studentUid == request.auth.uid; allow write: if false; }
+    match /assessmentResults/{id} { allow read: if signedIn() && resource.data.studentUid == request.auth.uid; allow write: if false; }
+    match /resumes/{id} { allow read: if signedIn() && resource.data.ownerUid == request.auth.uid; allow write: if false; }
+    match /collegeRecommendations/{id} { allow read: if signedIn() && (resource.data.studentUid == request.auth.uid || resource.data.collegeUid == request.auth.uid); allow write: if false; }
+
+    match /{document=**} { allow read, write: if false; }
+  }
+}

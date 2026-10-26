@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="sb-purple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c3aed" />
+      <stop offset="100%" stop-color="#6d28d9" />
+    </linearGradient>
+  </defs>
+  <!-- Brand squircle container with -5deg rotation matching SkillBridge logo -->
+  <g transform="rotate(-5 32 32)">
+    <rect x="6" y="6" width="52" height="52" rx="16" fill="url(#sb-purple)" />
+  </g>
+  <!-- Growth arrow rotated -40deg (-5deg box + -35deg icon) matching SkillBridge logo -->
+  <g transform="rotate(-40 32 32)">
+    <g transform="translate(14.5 14.5) scale(1.46)">
+      <path d="M5 12h14" stroke="#ffffff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" />
+      <path d="m12 5 7 7-7 7" stroke="#ffffff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" />
+    </g>
+  </g>
+</svg>

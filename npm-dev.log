@@ -1,0 +1,11 @@
+
+> skillbridge@0.1.0 dev
+> vite --configLoader native --config vite.local.config.ts --host 0.0.0.0
+
+
+  VITE v8.3.4  ready in 521 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://172.23.32.1:5173/    vEthernet (WSL (Hyp…
+  ➜  Network: http://192.168.0.161:5173/  Wi-Fi
+  ➜  press h + enter to show help
